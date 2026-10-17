@@ -8,7 +8,7 @@ fn main() {
     let blue: u8 = sprite.add_color(blue);
     let red: u8 = sprite.add_color(red);
 
-    for y in (0..5) {
+    for y in 0..5 {
         for x in (0..5).step_by(2) {
             sprite.set_pixel(x, y, red);
             sprite.set_pixel(x + 1, y, blue);
