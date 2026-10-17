@@ -50,10 +50,14 @@ impl Sprite {
             self.pixels[pixel_index] = palette_index;
         }
     }
-    pub fn add_color(&mut self, color: Color) -> u8 {
-        let index = self.palette.len() as u8;
+    pub fn add_color(&mut self, color: Color) -> Result<u8, &'static str> {
+        let index = u8::try_from(self.palette.len()).map_err(|_| "Palette is full")?;
         self.palette.push(color);
-        index
+        Ok(index)
+    }
+
+    pub fn edit_palette_index(&mut self, index: usize, color: Color) {
+        self.palette[index] = color;
     }
     pub fn display_grid(&self) {
         for y in 0..self.height {
