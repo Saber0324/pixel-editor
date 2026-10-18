@@ -465,6 +465,23 @@ impl Sprite {
     pub fn get_current_frame_index(&self) -> usize {
         self.current_frame
     }
+
+    /// Sets how long a `Frame` stays on screen.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SpriteError::InvalidFrameIndex` if the `Frame` doesn't exist.
+    pub fn set_frame_duration(
+        &mut self,
+        index: usize,
+        duration: Duration,
+    ) -> Result<(), SpriteError> {
+        self.frames
+            .get_mut(index)
+            .ok_or(SpriteError::InvalidFrameIndex(index))?
+            .set_duration(duration);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
