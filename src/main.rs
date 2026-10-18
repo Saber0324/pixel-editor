@@ -1,21 +1,50 @@
-use pixel_editor::colors::{Color, Sprite};
+use pixel_editor::sprite::{Color, DisplayMode, Index, Sprite};
 
-fn main() {
-    let blue: Color = Color::new(0, 0, 255, 255);
-    let red: Color = Color::new(255, 0, 0, 255);
+/// `#` is a pixel, `.` is empty.
+const HEART: [&str; 8] = [
+    ".##...##.",
+    "####.####",
+    "#########",
+    "#########",
+    ".#######.",
+    "..#####..",
+    "...###...",
+    "....#....",
+];
 
-    let mut sprite: Sprite = Sprite::new(5, 5);
-    let blue: u8 = sprite.add_color(blue).unwrap();
-    let red: u8 = sprite.add_color(red).unwrap();
+const SHINE: [&str; 3] = [".........", ".##......", ".#......."];
 
-    for y in 0..5 {
-        for x in (0..5).step_by(2) {
-            sprite.set_pixel(x, y, red);
-            if x + 1 < 5 {
-                sprite.set_pixel(x + 1, y, blue);
+/// Paints every `#` of the art on the given layer of the current frame.
+fn draw_art(sprite: &mut Sprite, layer: &str, art: &[&str], color: Index) {
+    sprite.set_active_layer(layer).expect("Layer should exist");
+
+    for (row, line) in (0u32..).zip(art) {
+        for (col, ch) in (0u32..).zip(line.chars()) {
+            if ch == '#' {
+                sprite.set_pixel(col, row, color);
             }
         }
     }
+}
 
-    sprite.display_grid();
+fn main() {
+    let mut sprite = Sprite::new(9, 8);
+    let red = sprite
+        .add_color(Color::new(220, 20, 60, 255))
+        .expect("Should have less than 256 colors");
+    let white = sprite
+        .add_color(Color::new(255, 255, 255, 255))
+        .expect("Should have less than 256 colors");
+
+    sprite.add_layer("Shine").expect("Name should be available");
+
+    draw_art(&mut sprite, "Background", &HEART, red);
+    draw_art(&mut sprite, "Shine", &SHINE, white);
+
+    sprite.display_all_layers(DisplayMode::Canvas);
+
+    println!();
+    println!();
+
+    sprite.display_all_layers(DisplayMode::Cel);
 }
