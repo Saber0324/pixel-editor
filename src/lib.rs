@@ -1,1 +1,1 @@
-pub mod colors;
+pub mod sprite;
