@@ -32,7 +32,7 @@ impl Color {
     }
 }
 
-/// Safe wrapper around u8 to represent a pixel's `Color`.
+/// Index into a `Sprite`'s palette. `Index(0)` is always the transparent entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Index(u8);
 
@@ -43,7 +43,11 @@ impl Index {
     }
 }
 
-/// Celluloid that works as a sub-rectangle of the canvas to draw on.
+/// The pixels of one `Layer` in one `Frame`, stored as a sub-rectangle of the canvas.
+///
+/// `x` and `y` are the canvas position of the rectangle's top-left corner, and `pixels`
+/// holds `width * height` entries in row-major order, in local coordinates.
+/// Anything on the canvas outside the rectangle counts as transparent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cel {
     x: u32,
@@ -126,7 +130,10 @@ pub enum LayerError {
     NameCollision,
 }
 
-/// Represents one of the different `Layer` of a `Sprite`
+/// A named layer, shared by every `Frame` of a `Sprite`.
+///
+/// `cels[f]` is this layer's `Cel` in frame `f`, or `None` if nothing is drawn there.
+/// Its length always equals the number of frames in the `Sprite`.
 #[derive(Debug, Clone)]
 pub struct Layer {
     name: String,
@@ -160,6 +167,7 @@ impl Layer {
     }
 }
 
+/// Creates the default "Background" layer with a single empty slot.
 impl Default for Layer {
     fn default() -> Self {
         Self {
@@ -170,20 +178,24 @@ impl Default for Layer {
     }
 }
 
+/// A point in the animation timeline. It holds timing only; the pixels live in the `Cel`s.
 #[derive(Debug)]
 pub struct Frame {
     duration: Duration,
 }
 
 impl Frame {
+    /// Creates a `Frame` that stays on screen for the given `Duration`.
     pub fn new(duration: Duration) -> Self {
         Self { duration }
     }
 
+    /// Returns how long the Frame stays on screen.
     pub fn duration(&self) -> Duration {
         self.duration
     }
 
+    /// Sets how long the Frame stays on screen.
     pub fn set_duration(&mut self, duration: std::time::Duration) {
         self.duration = duration;
     }
@@ -204,6 +216,10 @@ pub enum SpriteError {
     InvalidFrameIndex(usize),
 }
 
+/// An animation made of `Frame`s, with `Layer`s shared across all of them.
+///
+/// `palette[0]` is always transparent. `current_frame` and `active_layer` are indexes
+/// into `frames` and `layers`, and decide where `set_pixel` draws.
 #[derive(Debug)]
 pub struct Sprite {
     width: u32,
@@ -241,27 +257,30 @@ impl Sprite {
             .ok_or_else(|| LayerError::NotFound(name.to_string()))
     }
 
-    /// Returns a reference to a `Layer` within the current frame.
+    /// Returns a reference to a `Layer` of the `Sprite`.
     ///
     /// # Errors
     ///
-    /// Returns `LayerError::NotFound` if the `Layer` is not found in the current `Frame`.
+    /// Returns `LayerError::NotFound` if no `Layer` has that name.
     pub fn get_layer(&self, name: &str) -> Result<&Layer, LayerError> {
         Ok(&self.layers[self.get_layer_index(name)?])
     }
 
     /// Returns the `Cel` of a `Layer` in the current frame, or `None` if nothing is drawn there.
+    ///
+    /// # Errors
+    ///
+    /// Returns `LayerError::NotFound` if no `Layer` has that name.
     pub fn get_cel(&self, name: &str) -> Result<Option<&Cel>, LayerError> {
         let index = self.get_layer_index(name)?;
         Ok(self.layers[index].cels[self.current_frame].as_ref())
     }
 
-    /// Adds a `Layer` to the current frame.
+    /// Adds a `Layer` on top of the stack, with an empty slot for every existing `Frame`.
     ///
     /// # Errors
     ///
-    /// Returns `LayerError::NameCollision` if there's already a `Layer`
-    /// with the same `name`.
+    /// Returns `LayerError::NameCollision` if a `Layer` with that name already exists.
     pub fn add_layer(&mut self, name: &str) -> Result<(), LayerError> {
         if self.get_layer_index(name).is_ok() {
             return Err(LayerError::NameCollision);
@@ -270,17 +289,20 @@ impl Sprite {
         Ok(())
     }
 
-    /// Changes the active `Layer` to another one.
+    /// Changes the `Layer` that `set_pixel` draws on.
     ///
     /// # Errors
     ///
-    /// Returns `LayerError::NotFound` if the `Layer` is not found in the current `Frame`.
+    /// Returns `LayerError::NotFound` if no `Layer` has that name.
     pub fn set_active_layer(&mut self, name: &str) -> Result<(), LayerError> {
         self.active_layer = self.get_layer_index(name)?;
         Ok(())
     }
 
-    /// Sets the pixel at the provided row and column to the `Index` of the provided color.
+    /// Sets the pixel at the given row and column on the active `Layer` in the current frame.
+    ///
+    /// Creates the `Cel` on the first write and grows it when drawing outside its rectangle.
+    /// Positions outside the canvas are ignored.
     pub fn set_pixel(&mut self, row: u32, col: u32, palette_index: Index) {
         if row >= self.height || col >= self.width {
             return;
@@ -293,16 +315,17 @@ impl Sprite {
         }
     }
 
-    /// Resets a pixel to `Index` of 0, making it transparent.
+    /// Resets a pixel to `Index(0)`, making it transparent.
+    /// Erasing where no `Cel` exists does nothing.
     pub fn erase_pixel(&mut self, row: u32, col: u32) {
         self.set_pixel(row, col, Index(0));
     }
 
-    /// Adds a color to the palette.
+    /// Adds a color to the palette and returns its `Index`.
     ///
     /// # Errors
     ///
-    /// Returns `SpriteError::PaletteOverflow` if the palette has more than 256 colors.
+    /// Returns `SpriteError::PaletteOverflow` if the palette already holds 256 entries.
     pub fn add_color(&mut self, color: Color) -> Result<Index, SpriteError> {
         if self.palette.len() >= 256 {
             Err(SpriteError::PaletteOverflow)
@@ -313,7 +336,8 @@ impl Sprite {
         }
     }
 
-    /// Displays all the pixels of the selected `Layer` in a grid.
+    /// Prints a `Layer`'s palette indexes for the current frame as a grid.
+    /// An empty slot prints as zeros.
     fn display_layer_data(&self, layer: &Layer) {
         let cel = layer.cels[self.current_frame].as_ref();
         println!("Layer: '{}' (Visible: {})", layer.name, layer.is_visible);
@@ -327,25 +351,25 @@ impl Sprite {
         println!();
     }
 
-    /// Displays all the pixels of the selected `Layer` in a grid.
+    /// Prints one `Layer`'s grid for the current frame.
     ///
     /// # Errors
     ///
-    /// Returns `LayerError::NotFound` if the `Layer` is not found in the current `Frame`.
+    /// Returns `LayerError::NotFound` if no `Layer` has that name.
     pub fn display_layer(&self, name: &str) -> Result<(), LayerError> {
         let layer = self.get_layer(name)?;
         self.display_layer_data(layer);
         Ok(())
     }
 
-    /// Displays all the pixels of all the `Layer`s in the current `Frame` as a sequence of grids.
+    /// Prints every `Layer`'s grid for the current frame, bottom layer first.
     pub fn display_all_layers(&self) {
         for layer in &self.layers {
             self.display_layer_data(layer);
         }
     }
 
-    /// Adds a `Frame` to the `Sprite`.
+    /// Adds a `Frame` with the default duration, and an empty slot in every `Layer`.
     pub fn add_frame(&mut self) {
         self.frames.push(Frame::default());
         for layer in &mut self.layers {
@@ -353,7 +377,11 @@ impl Sprite {
         }
     }
 
-    /// Switches the active `Frame` index, updating the active `Layer` fallback if necessary.
+    /// Switches the current `Frame`. The active `Layer` stays the same.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SpriteError::InvalidFrameIndex` if the `Frame` doesn't exist.
     pub fn set_current_frame(&mut self, index: usize) -> Result<(), SpriteError> {
         if index < self.frames.len() {
             self.current_frame = index;
@@ -379,6 +407,8 @@ impl Sprite {
 mod tests {
     use super::*;
 
+    /// Returns the Index at a canvas position of a Layer in the current frame,
+    /// or Index(0) if no Cel exists.
     fn pixel_at(sprite: &Sprite, layer: &str, col: u32, row: u32) -> Index {
         sprite
             .get_cel(layer)
