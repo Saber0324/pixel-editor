@@ -315,6 +315,17 @@ impl Sprite {
         }
     }
 
+    /// Shows or hides a `Layer`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `LayerError::NotFound` if the `Layer` is not found in the `Sprite`.
+    pub fn set_layer_visible(&mut self, name: &str, visible: bool) -> Result<(), LayerError> {
+        let index = self.get_layer_index(name)?;
+        self.layers[index].visible(visible);
+        Ok(())
+    }
+
     /// Resets a pixel to `Index(0)`, making it transparent.
     /// Erasing where no `Cel` exists does nothing.
     pub fn erase_pixel(&mut self, row: u32, col: u32) {
