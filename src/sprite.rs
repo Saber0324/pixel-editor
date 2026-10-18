@@ -357,7 +357,7 @@ impl Sprite {
     ///
     /// Creates the `Cel` on the first write and grows it when drawing outside its rectangle.
     /// Positions outside the canvas are ignored.
-    pub fn set_pixel(&mut self, row: u32, col: u32, palette_index: Index) {
+    pub fn set_pixel(&mut self, col: u32, row: u32, palette_index: Index) {
         if row >= self.height || col >= self.width {
             return;
         }
@@ -382,8 +382,8 @@ impl Sprite {
 
     /// Resets a pixel to `Index(0)`, making it transparent.
     /// Erasing where no `Cel` exists does nothing.
-    pub fn erase_pixel(&mut self, row: u32, col: u32) {
-        self.set_pixel(row, col, Index(0));
+    pub fn erase_pixel(&mut self, col: u32, row: u32) {
+        self.set_pixel(col, row, Index(0));
     }
 
     /// Adds a color to the palette and returns its `Index`.
@@ -627,6 +627,32 @@ mod tests {
         sprite.set_pixel(10, 10, red);
     }
 
+    /// Verifies that `set_pixel` takes `(col, row)`, using a position where the two differ.
+    #[test]
+    fn test_set_pixel_uses_col_then_row() {
+        let mut sprite = Sprite::new(4, 4);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.set_pixel(3, 1, red); // col 3, row 1
+
+        assert_eq!(pixel_at(&sprite, "Background", 3, 1), red);
+        assert_eq!(pixel_at(&sprite, "Background", 1, 3), Index(0));
+    }
+
+    /// Verifies that `erase_pixel` takes `(col, row)`, using positions where the two differ.
+    #[test]
+    fn test_erase_pixel_uses_col_then_row() {
+        let mut sprite = Sprite::new(4, 4);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.set_pixel(3, 1, red);
+        sprite.set_pixel(1, 3, red);
+        sprite.erase_pixel(3, 1);
+
+        assert_eq!(pixel_at(&sprite, "Background", 3, 1), Index(0));
+        assert_eq!(pixel_at(&sprite, "Background", 1, 3), red);
+    }
+
     /// Verifies that the display and printing helper functions execute cleanly
     /// without panicking, correctly succeeding for existing layers and returning
     /// an error for non-existent layers.
@@ -739,8 +765,8 @@ mod tests {
         let mut sprite = Sprite::new(8, 8);
         let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
 
-        sprite.set_pixel(3, 2, red); // row 3, col 2
-        sprite.set_pixel(5, 4, red); // row 5, col 4
+        sprite.set_pixel(2, 3, red); // col 2, row 3
+        sprite.set_pixel(4, 5, red); // col 4, row 5
 
         assert_eq!(pixel_at(&sprite, "Background", 2, 3), red);
         assert_eq!(pixel_at(&sprite, "Background", 4, 5), red);
@@ -758,7 +784,7 @@ mod tests {
         let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
 
         sprite.set_pixel(5, 5, red);
-        sprite.set_pixel(2, 1, red);
+        sprite.set_pixel(1, 2, red); // col 1, row 2
 
         assert_eq!(pixel_at(&sprite, "Background", 5, 5), red);
         assert_eq!(pixel_at(&sprite, "Background", 1, 2), red);
@@ -770,7 +796,7 @@ mod tests {
         let mut sprite = Sprite::new(8, 8);
         let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
 
-        sprite.set_pixel(3, 2, red);
+        sprite.set_pixel(2, 3, red); // col 2, row 3
         sprite.erase_pixel(0, 0);
 
         let cel = sprite.get_cel("Background").unwrap().unwrap();
@@ -783,9 +809,9 @@ mod tests {
         let mut sprite = Sprite::new(8, 8);
         let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
 
-        sprite.set_pixel(3, 2, red);
-        sprite.set_pixel(5, 4, red);
-        sprite.erase_pixel(5, 4); // inside the rectangle, so it stays 3x3
+        sprite.set_pixel(2, 3, red); // col 2, row 3
+        sprite.set_pixel(4, 5, red); // col 4, row 5
+        sprite.erase_pixel(4, 5); // inside the rectangle, so it stays 3x3
         sprite.trim_active_cel();
 
         let cel = sprite.get_cel("Background").unwrap().unwrap();
