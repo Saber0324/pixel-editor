@@ -275,6 +275,17 @@ pub struct Sprite {
     active_layer: usize,
 }
 
+/// Which view of a `Layer` the display functions print.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayMode {
+    /// What the `Layer` contributes to the canvas: every position shows its palette index,
+    /// and anything without a drawn pixel shows as `0`.
+    Canvas,
+    /// What is actually stored: `.` is a transparent pixel inside the `Cel`, and a blank
+    /// is anything not stored (no `Cel`, or outside its rectangle).
+    Cel,
+}
+
 impl Sprite {
     /// Creates a new `Sprite`
     pub fn new(width: u32, height: u32) -> Self {
@@ -401,36 +412,49 @@ impl Sprite {
         }
     }
 
-    /// Prints a `Layer`'s palette indexes for the current frame as a grid.
-    /// An empty slot prints as zeros.
-    fn display_layer_data(&self, layer: &Layer) {
+    /// Prints a `Layer`'s grid for the current frame, one palette index per position.
+    /// See `DisplayMode` for what each view shows.
+    fn display_layer_data(&self, layer: &Layer, mode: DisplayMode) {
         let cel = layer.cels[self.current_frame].as_ref();
         println!("Layer: '{}' (Visible: {})", layer.name, layer.is_visible);
         for row in 0..self.height {
             for col in 0..self.width {
-                let value = cel.map_or(0, |cel| cel.get(col, row).value());
-                print!("{value} ");
+                let cell = match (mode, cel) {
+                    (DisplayMode::Canvas, _) => {
+                        let value = cel.map_or(0, |cel| cel.get(col, row).value());
+                        value.to_string()
+                    }
+                    (DisplayMode::Cel, Some(cel)) if cel.contains(col, row) => {
+                        match cel.get(col, row).value() {
+                            0 => ".".to_string(),
+                            value => value.to_string(),
+                        }
+                    }
+                    (DisplayMode::Cel, _) => " ".to_string(),
+                };
+                print!("{cell} ");
             }
             println!();
         }
         println!();
     }
 
-    /// Prints one `Layer`'s grid for the current frame.
+    /// Prints one `Layer`'s grid for the current frame in the given `DisplayMode`.
     ///
     /// # Errors
     ///
     /// Returns `LayerError::NotFound` if no `Layer` has that name.
-    pub fn display_layer(&self, name: &str) -> Result<(), LayerError> {
+    pub fn display_layer(&self, name: &str, mode: DisplayMode) -> Result<(), LayerError> {
         let layer = self.get_layer(name)?;
-        self.display_layer_data(layer);
+        self.display_layer_data(layer, mode);
         Ok(())
     }
 
-    /// Prints every `Layer`'s grid for the current frame, bottom layer first.
-    pub fn display_all_layers(&self) {
+    /// Prints every `Layer`'s grid for the current frame in the given `DisplayMode`,
+    /// bottom layer first.
+    pub fn display_all_layers(&self, mode: DisplayMode) {
         for layer in &self.layers {
-            self.display_layer_data(layer);
+            self.display_layer_data(layer, mode);
         }
     }
 
@@ -653,20 +677,27 @@ mod tests {
         assert_eq!(pixel_at(&sprite, "Background", 1, 3), red);
     }
 
-    /// Verifies that the display and printing helper functions execute cleanly
-    /// without panicking, correctly succeeding for existing layers and returning
-    /// an error for non-existent layers.
+    /// Verifies that the display and printing helper functions execute cleanly in both
+    /// `DisplayMode`s, including for a `Layer` with no `Cel` and for a `Cel` with a
+    /// transparent gap inside it, and that a non-existent layer returns an error.
     #[test]
     fn test_display_functions_dont_panic() {
-        let mut sprite = Sprite::new(2, 2);
+        let mut sprite = Sprite::new(3, 3);
         let blue = sprite.add_color(Color::new(0, 0, 255, 255)).unwrap();
+        sprite.add_layer("Empty").unwrap();
+
+        // Background gets a cel with a gap: (0, 0) and (2, 2) drawn, (1, 1) transparent.
         sprite.set_pixel(0, 0, blue);
+        sprite.set_pixel(2, 2, blue);
 
-        // Ensure display methods run cleanly without throwing errors
-        assert!(sprite.display_layer("Background").is_ok());
-        assert!(sprite.display_layer("NonExistent").is_err());
+        for mode in [DisplayMode::Canvas, DisplayMode::Cel] {
+            // A layer with a cel, and a layer with no cel at all
+            assert!(sprite.display_layer("Background", mode).is_ok());
+            assert!(sprite.display_layer("Empty", mode).is_ok());
+            assert!(sprite.display_layer("NonExistent", mode).is_err());
 
-        sprite.display_all_layers();
+            sprite.display_all_layers(mode);
+        }
     }
 
     /// Verifies that new `Frame`s can be added, `Frame` counts increment correctly,
