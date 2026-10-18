@@ -128,6 +128,41 @@ impl Cel {
         let (lx, ly) = (col - self.x, row - self.y);
         self.pixels[ly as usize * self.width as usize + lx as usize] = index;
     }
+
+    /// Shrinks the rectangle to the bounding box of the non-transparent pixels.
+    /// Returns `false` if every pixel is transparent, leaving the cel unchanged.
+    fn trim(&mut self) -> bool {
+        let mut bounds: Option<(u32, u32, u32, u32)> = None; // min_x, min_y, max_x, max_y
+        for ly in 0..self.height {
+            for lx in 0..self.width {
+                if self.pixels[ly as usize * self.width as usize + lx as usize] == Index(0) {
+                    continue;
+                }
+                bounds = Some(match bounds {
+                    None => (lx, ly, lx, ly),
+                    Some((x0, y0, x1, y1)) => (x0.min(lx), y0.min(ly), x1.max(lx), y1.max(ly)),
+                });
+            }
+        }
+        let Some((x0, y0, x1, y1)) = bounds else {
+            return false;
+        };
+
+        let new_width = x1 - x0 + 1;
+        let new_height = y1 - y0 + 1;
+        let mut new_pixels = Vec::with_capacity(new_width as usize * new_height as usize);
+        for ly in y0..=y1 {
+            let start = ly as usize * self.width as usize + x0 as usize;
+            new_pixels.extend_from_slice(&self.pixels[start..start + new_width as usize]);
+        }
+
+        self.x += x0;
+        self.y += y0;
+        self.width = new_width;
+        self.height = new_height;
+        self.pixels = new_pixels;
+        true
+    }
 }
 
 #[derive(Error, Debug)]
