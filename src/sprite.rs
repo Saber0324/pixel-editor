@@ -320,6 +320,16 @@ impl Sprite {
         Ok(self.layers[index].cels[self.current_frame].as_ref())
     }
 
+    /// Shrinks the active `Layer`'s cel in the current frame to the pixels actually drawn.
+    /// A cel with nothing left becomes `None`.
+    pub fn trim_active_cel(&mut self) {
+        let slot = &mut self.layers[self.active_layer].cels[self.current_frame];
+        let is_empty = slot.as_mut().is_some_and(|cel| !cel.trim());
+        if is_empty {
+            *slot = None;
+        }
+    }
+
     /// Adds a `Layer` on top of the stack, with an empty slot for every existing `Frame`.
     ///
     /// # Errors
