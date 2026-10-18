@@ -1,5 +1,5 @@
-use pixel_editor::colors::Color;
-use pixel_editor::colors::Sprite;
+use pixel_editor::sprite::Color;
+use pixel_editor::sprite::Sprite;
 
 fn main() {
     let blue = Color::new(0, 0, 255, 255);
