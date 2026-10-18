@@ -1,3 +1,4 @@
+use std::time::Duration;
 use thiserror::Error;
 
 /// Represents a color with red, green, blue and alpha values.
@@ -42,13 +43,78 @@ impl Index {
     }
 }
 
-#[derive(Debug)]
+/// Celluloid that works as a sub-rectangle of the canvas to draw on.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cel {
     x: u32,
     y: u32,
     width: u32,
     height: u32,
     pixels: Vec<Index>,
+}
+
+impl Cel {
+    /// Creates a 1x1 `Cel` holding a single pixel at the given canvas position.
+    fn single(col: u32, row: u32, index: Index) -> Self {
+        Self {
+            x: col,
+            y: row,
+            width: 1,
+            height: 1,
+            pixels: vec![index],
+        }
+    }
+
+    /// Enlarges the cel's rectangle so it contains the given canvas position.
+    /// New area is filled with transparent pixels.
+    fn grow_to_include(&mut self, col: u32, row: u32) {
+        let new_x = self.x.min(col);
+        let new_y = self.y.min(row);
+        let new_right = (self.x + self.width).max(col + 1);
+        let new_bottom = (self.y + self.height).max(row + 1);
+        let new_width = new_right - new_x;
+        let new_height = new_bottom - new_y;
+
+        if (new_x, new_y, new_width, new_height) == (self.x, self.y, self.width, self.height) {
+            return; // already inside
+        }
+
+        let mut new_pixels = vec![Index(0); new_width as usize * new_height as usize];
+        let old_width = self.width as usize;
+        let x_offset = (self.x - new_x) as usize;
+        let y_offset = (self.y - new_y) as usize;
+
+        for ly in 0..self.height as usize {
+            let src = ly * old_width;
+            let dst = (y_offset + ly) * new_width as usize + x_offset;
+            new_pixels[dst..dst + old_width].copy_from_slice(&self.pixels[src..src + old_width]);
+        }
+
+        self.x = new_x;
+        self.y = new_y;
+        self.width = new_width;
+        self.height = new_height;
+        self.pixels = new_pixels;
+    }
+
+    /// Returns the `Index` at a canvas position. Outside the cel is transparent.
+    fn get(&self, col: u32, row: u32) -> Index {
+        if col < self.x || row < self.y {
+            return Index(0);
+        }
+        let (lx, ly) = (col - self.x, row - self.y);
+        if lx >= self.width || ly >= self.height {
+            return Index(0);
+        }
+        self.pixels[ly as usize * self.width as usize + lx as usize]
+    }
+
+    /// Sets the `Index` at a canvas position, growing the cel if needed.
+    fn set(&mut self, col: u32, row: u32, index: Index) {
+        self.grow_to_include(col, row);
+        let (lx, ly) = (col - self.x, row - self.y);
+        self.pixels[ly as usize * self.width as usize + lx as usize] = index;
+    }
 }
 
 #[derive(Error, Debug)]
@@ -60,22 +126,21 @@ pub enum LayerError {
     NameCollision,
 }
 
+/// Represents one of the different `Layer` of a `Sprite`
 #[derive(Debug, Clone)]
 pub struct Layer {
     name: String,
     is_visible: bool,
-    pixels: Vec<Index>,
+    cels: Vec<Option<Cel>>,
 }
 
 impl Layer {
     /// Creates a new `Layer`.
-    pub fn new(name: &str, width: u32, height: u32) -> Self {
-        let total_pixels = width as usize * height as usize;
-        let pixels = vec![Index(0); total_pixels];
+    pub fn new(name: &str, frame_count: usize) -> Self {
         Self {
             name: name.to_string(),
             is_visible: true,
-            pixels,
+            cels: vec![None; frame_count],
         }
     }
 
@@ -95,17 +160,38 @@ impl Layer {
     }
 }
 
+impl Default for Layer {
+    fn default() -> Self {
+        Self {
+            name: "Background".to_string(),
+            is_visible: true,
+            cels: vec![None; 1],
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Frame {
-    pub layers: Vec<Layer>,
+    duration: Duration,
 }
 
 impl Frame {
-    /// Creates a new `Frame`.
-    fn new(width: u32, height: u32) -> Self {
-        Self {
-            layers: vec![Layer::new("Background", width, height)],
-        }
+    pub fn new(duration: Duration) -> Self {
+        Self { duration }
+    }
+
+    pub fn duration(&self) -> Duration {
+        self.duration
+    }
+
+    pub fn set_duration(&mut self, duration: std::time::Duration) {
+        self.duration = duration;
+    }
+}
+
+impl Default for Frame {
+    fn default() -> Self {
+        Self::new(Duration::from_millis(100))
     }
 }
 
@@ -113,9 +199,6 @@ impl Frame {
 pub enum SpriteError {
     #[error("Can't add more than 256 colors to a single palette!")]
     PaletteOverflow,
-
-    #[error("Couldn't find the active layer")]
-    MissingActiveLayer,
 
     #[error("Invalid frame index: {0}")]
     InvalidFrameIndex(usize),
@@ -127,8 +210,9 @@ pub struct Sprite {
     height: u32,
     palette: Vec<Color>,
     frames: Vec<Frame>,
+    layers: Vec<Layer>,
     current_frame: usize,
-    active_layer: String,
+    active_layer: usize,
 }
 
 impl Sprite {
@@ -138,10 +222,23 @@ impl Sprite {
             width,
             height,
             palette: vec![Color::transparent()],
-            active_layer: "Background".to_string(),
-            frames: vec![Frame::new(width, height)],
+            active_layer: 0,
+            frames: vec![Frame::default()],
             current_frame: 0,
+            layers: vec![Layer::default()],
         }
+    }
+
+    /// Returns the `usize` index of the selected `Layer`
+    ///
+    /// # Errors
+    ///
+    /// Returns `LayerError::NotFound` if `name` does not match a `Layer.name` in `self.layers`
+    fn get_layer_index(&self, name: &str) -> Result<usize, LayerError> {
+        self.layers
+            .iter()
+            .position(|layer| layer.name == name)
+            .ok_or_else(|| LayerError::NotFound(name.to_string()))
     }
 
     /// Returns a reference to a `Layer` within the current frame.
@@ -150,30 +247,13 @@ impl Sprite {
     ///
     /// Returns `LayerError::NotFound` if the `Layer` is not found in the current `Frame`.
     pub fn get_layer(&self, name: &str) -> Result<&Layer, LayerError> {
-        let current_frame = &self.frames[self.current_frame];
-        if let Some(layer) = current_frame.layers.iter().find(|layer| layer.name == name) {
-            Ok(layer)
-        } else {
-            Err(LayerError::NotFound(name.to_string()))
-        }
+        Ok(&self.layers[self.get_layer_index(name)?])
     }
 
-    /// Returns a mutable reference to a `Layer` within the current frame.
-    ///
-    /// # Errors
-    ///
-    /// Returns `LayerError::NotFound` if the `Layer` is not found in the current `Frame`.
-    pub fn get_mut_layer(&mut self, name: &str) -> Result<&mut Layer, LayerError> {
-        let current_frame = &mut self.frames[self.current_frame];
-        if let Some(layer) = current_frame
-            .layers
-            .iter_mut()
-            .find(|layer| layer.name == name)
-        {
-            Ok(layer)
-        } else {
-            Err(LayerError::NotFound(name.to_string()))
-        }
+    /// Returns the `Cel` of a `Layer` in the current frame, or `None` if nothing is drawn there.
+    pub fn get_cel(&self, name: &str) -> Result<Option<&Cel>, LayerError> {
+        let index = self.get_layer_index(name)?;
+        Ok(self.layers[index].cels[self.current_frame].as_ref())
     }
 
     /// Adds a `Layer` to the current frame.
@@ -181,25 +261,13 @@ impl Sprite {
     /// # Errors
     ///
     /// Returns `LayerError::NameCollision` if there's already a `Layer`
-    /// with the same name.
+    /// with the same `name`.
     pub fn add_layer(&mut self, name: &str) -> Result<(), LayerError> {
-        if self.get_layer(name).is_ok() {
-            Err(LayerError::NameCollision)
-        } else {
-            let layer = Layer::new(name, self.width, self.height);
-            let current_frame = &mut self.frames[self.current_frame];
-            current_frame.layers.push(layer);
-            Ok(())
+        if self.get_layer_index(name).is_ok() {
+            return Err(LayerError::NameCollision);
         }
-    }
-
-    /// Returns the index of the provided row and column.
-    fn get_index(&self, row: u32, col: u32) -> usize {
-        let width = self.width as usize;
-        let row = row as usize;
-        let col = col as usize;
-
-        (row * width) + col
+        self.layers.push(Layer::new(name, self.frames.len()));
+        Ok(())
     }
 
     /// Changes the active `Layer` to another one.
@@ -208,24 +276,20 @@ impl Sprite {
     ///
     /// Returns `LayerError::NotFound` if the `Layer` is not found in the current `Frame`.
     pub fn set_active_layer(&mut self, name: &str) -> Result<(), LayerError> {
-        if self.active_layer == name {
-            Ok(())
-        } else if self.get_layer(name).is_ok() {
-            self.active_layer = name.to_string();
-            Ok(())
-        } else {
-            Err(LayerError::NotFound(name.to_string()))
-        }
+        self.active_layer = self.get_layer_index(name)?;
+        Ok(())
     }
 
     /// Sets the pixel at the provided row and column to the `Index` of the provided color.
     pub fn set_pixel(&mut self, row: u32, col: u32, palette_index: Index) {
-        if row < self.height && col < self.width {
-            let idx = self.get_index(row, col);
-            let active_name = self.active_layer.clone();
-            if let Ok(active_layer) = self.get_mut_layer(&active_name) {
-                active_layer.pixels[idx] = palette_index;
-            }
+        if row >= self.height || col >= self.width {
+            return;
+        }
+        let slot = &mut self.layers[self.active_layer].cels[self.current_frame];
+        match slot {
+            Some(cel) => cel.set(col, row, palette_index),
+            None if palette_index == Index(0) => {} // erasing an empty slot: nothing to do
+            None => *slot = Some(Cel::single(col, row, palette_index)),
         }
     }
 
@@ -251,12 +315,12 @@ impl Sprite {
 
     /// Displays all the pixels of the selected `Layer` in a grid.
     fn display_layer_data(&self, layer: &Layer) {
+        let cel = layer.cels[self.current_frame].as_ref();
         println!("Layer: '{}' (Visible: {})", layer.name, layer.is_visible);
         for row in 0..self.height {
             for col in 0..self.width {
-                let idx = self.get_index(row, col);
-                let palette_index = layer.pixels[idx].value();
-                print!("{palette_index} ");
+                let value = cel.map_or(0, |cel| cel.get(col, row).value());
+                print!("{value} ");
             }
             println!();
         }
@@ -276,31 +340,23 @@ impl Sprite {
 
     /// Displays all the pixels of all the `Layer`s in the current `Frame` as a sequence of grids.
     pub fn display_all_layers(&self) {
-        let current_frame = &self.frames[self.current_frame];
-        for layer in &current_frame.layers {
+        for layer in &self.layers {
             self.display_layer_data(layer);
         }
     }
 
     /// Adds a `Frame` to the `Sprite`.
     pub fn add_frame(&mut self) {
-        let new_frame = Frame::new(self.width, self.height);
-        self.frames.push(new_frame);
+        self.frames.push(Frame::default());
+        for layer in &mut self.layers {
+            layer.cels.push(None);
+        }
     }
 
     /// Switches the active `Frame` index, updating the active `Layer` fallback if necessary.
     pub fn set_current_frame(&mut self, index: usize) -> Result<(), SpriteError> {
         if index < self.frames.len() {
             self.current_frame = index;
-            let target_frame = &self.frames[index];
-            if !target_frame
-                .layers
-                .iter()
-                .any(|l| l.name == self.active_layer)
-                && let Some(first_layer) = target_frame.layers.first()
-            {
-                self.active_layer = first_layer.name.clone();
-            }
             Ok(())
         } else {
             Err(SpriteError::InvalidFrameIndex(index))
@@ -323,6 +379,13 @@ impl Sprite {
 mod tests {
     use super::*;
 
+    fn pixel_at(sprite: &Sprite, layer: &str, col: u32, row: u32) -> Index {
+        sprite
+            .get_cel(layer)
+            .unwrap()
+            .map_or(Index(0), |cel| cel.get(col, row))
+    }
+
     /// Verifies that a new sprite is correctly initialized with the specified
     /// width and height, and automatically contains a default "Background" layer.
     #[test]
@@ -344,15 +407,13 @@ mod tests {
         color.change_alpha(128);
         assert_eq!(color.alpha, 128);
 
-        let transparent_color = Color::transparent();
-        assert_eq!(transparent_color.alpha, 0);
+        assert_eq!(Color::transparent().alpha, 0);
     }
 
     /// Verifies that the `Index` wrapper type correctly holds a `u8` value
     /// and that its `.value()` method returns the expected integer.
     #[test]
     fn test_index_value() {
-        // yes I did this just for coverage
         let idx = Index(5);
         assert_eq!(idx.value(), 5);
     }
@@ -361,8 +422,10 @@ mod tests {
     /// and that visibility toggles properly modify the layer's state.
     #[test]
     fn test_layer_getters_and_setters() {
-        let mut layer = Layer::new("TestLayer", 4, 4);
+        let mut layer = Layer::new("TestLayer", 1);
         assert_eq!(layer.get_name(), "TestLayer");
+
+        assert!(layer.cels == vec![None]);
 
         layer.set_name("RenamedLayer");
         assert_eq!(layer.get_name(), "RenamedLayer");
@@ -437,20 +500,13 @@ mod tests {
 
         // Draw a pixel
         sprite.set_pixel(1, 1, red);
-
-        {
-            let layer = sprite.get_layer("Background").unwrap();
-            let idx = sprite.get_index(1, 1);
-            assert_eq!(layer.pixels[idx], red);
-        }
+        assert_eq!(pixel_at(&sprite, "Background", 1, 1), red);
 
         // Erase the pixel
         sprite.erase_pixel(1, 1);
 
         // Check it again
-        let layer = sprite.get_layer("Background").unwrap();
-        let idx = sprite.get_index(1, 1);
-        assert_eq!(layer.pixels[idx], Index(0));
+        assert_eq!(pixel_at(&sprite, "Background", 1, 1), Index(0));
 
         // Out of bounds should be silently ignored without crashing
         sprite.set_pixel(10, 10, red);
@@ -517,18 +573,79 @@ mod tests {
         sprite.set_current_frame(1).unwrap();
 
         // `Frame` 1's background layer should still be transparent (Index 0) at (0, 0)
-        {
-            let layer = sprite.get_layer("Background").unwrap();
-            let idx = sprite.get_index(0, 0);
-            assert_eq!(layer.pixels[idx], Index(0));
-        }
+        assert_eq!(pixel_at(&sprite, "Background", 0, 0), Index(0));
 
         // Switch back to `Frame` 0 and verify the red pixel is still there
         sprite.set_current_frame(0).unwrap();
-        {
-            let layer = sprite.get_layer("Background").unwrap();
-            let idx = sprite.get_index(0, 0);
-            assert_eq!(layer.pixels[idx], red);
+        assert_eq!(pixel_at(&sprite, "Background", 0, 0), red);
+    }
+
+    /// Verifies that every layer has one slot per frame, and that new slots are empty.
+    #[test]
+    fn test_layers_shared_across_frames() {
+        let mut sprite = Sprite::new(4, 4);
+        sprite.add_frame();
+        sprite.add_layer("Foreground").unwrap();
+        sprite.add_frame();
+
+        for layer in &sprite.layers {
+            assert_eq!(layer.cels.len(), sprite.frames.len());
+            assert!(layer.cels.iter().all(Option::is_none));
         }
+    }
+
+    /// Verifies that drawing creates the cel lazily and erasing an empty slot doesn't.
+    #[test]
+    fn test_cel_created_on_first_write() {
+        let mut sprite = Sprite::new(4, 4);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.erase_pixel(0, 0);
+        assert!(sprite.get_cel("Background").unwrap().is_none());
+
+        sprite.set_pixel(0, 0, red);
+        assert!(sprite.get_cel("Background").unwrap().is_some());
+    }
+
+    /// Verifies that new frames start with the default duration and that it can be changed.
+    #[test]
+    fn test_frame_duration() {
+        let mut frame = Frame::default();
+        assert_eq!(frame.duration(), Duration::from_millis(100));
+
+        frame.set_duration(Duration::from_millis(250));
+        assert_eq!(frame.duration(), Duration::from_millis(250));
+    }
+
+    /// Verifies that a cel grows to include pixels drawn outside its rectangle,
+    /// keeping the existing pixels in place.
+    #[test]
+    fn test_cel_grows_to_include_new_pixels() {
+        let mut sprite = Sprite::new(8, 8);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.set_pixel(3, 2, red); // row 3, col 2
+        sprite.set_pixel(5, 4, red); // row 5, col 4
+
+        assert_eq!(pixel_at(&sprite, "Background", 2, 3), red);
+        assert_eq!(pixel_at(&sprite, "Background", 4, 5), red);
+        assert_eq!(pixel_at(&sprite, "Background", 3, 4), Index(0)); // gap inside
+        assert_eq!(pixel_at(&sprite, "Background", 0, 0), Index(0)); // outside
+
+        let cel = sprite.get_cel("Background").unwrap().unwrap();
+        assert_eq!((cel.x, cel.y, cel.width, cel.height), (2, 3, 3, 3));
+    }
+
+    /// Verifies that growing up and to the left also preserves existing pixels.
+    #[test]
+    fn test_cel_grows_up_and_left() {
+        let mut sprite = Sprite::new(8, 8);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.set_pixel(5, 5, red);
+        sprite.set_pixel(2, 1, red);
+
+        assert_eq!(pixel_at(&sprite, "Background", 5, 5), red);
+        assert_eq!(pixel_at(&sprite, "Background", 1, 2), red);
     }
 }
