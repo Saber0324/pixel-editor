@@ -119,7 +119,11 @@ impl Cel {
     }
 
     /// Sets the `Index` at a canvas position, growing the cel if needed.
+    /// Writing a transparent pixel outside the rectangle does nothing.
     fn set(&mut self, col: u32, row: u32, index: Index) {
+        if index == Index(0) && !self.contains(col, row) {
+            return;
+        }
         self.grow_to_include(col, row);
         let (lx, ly) = (col - self.x, row - self.y);
         self.pixels[ly as usize * self.width as usize + lx as usize] = index;
