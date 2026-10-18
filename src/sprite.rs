@@ -111,17 +111,11 @@ impl Frame {
 
 #[derive(Error, Debug)]
 pub enum SpriteError {
-    #[error("Can't add more than 255 colors to a single palette!")]
+    #[error("Can't add more than 256 colors to a single palette!")]
     PaletteOverflow,
 
     #[error("Couldn't find the active layer")]
     MissingActiveLayer,
-
-    #[error("Invalid column position: {0}")]
-    InvalidColumn(u32),
-
-    #[error("Invalid row position: {0}")]
-    InvalidRow(u32),
 
     #[error("Invalid frame index: {0}")]
     InvalidFrameIndex(usize),
@@ -152,7 +146,7 @@ impl Sprite {
 
     /// Returns a reference to a `Layer` within the current frame.
     ///
-    /// # errors
+    /// # Errors
     ///
     /// Returns `LayerError::NotFound` if the `Layer` is not found in the current `Frame`.
     pub fn get_layer(&self, name: &str) -> Result<&Layer, LayerError> {
@@ -245,7 +239,6 @@ impl Sprite {
     /// # Errors
     ///
     /// Returns `SpriteError::PaletteOverflow` if the palette has more than 256 colors.
-    // This migh have to be changed later.
     pub fn add_color(&mut self, color: Color) -> Result<Index, SpriteError> {
         if self.palette.len() >= 256 {
             Err(SpriteError::PaletteOverflow)
