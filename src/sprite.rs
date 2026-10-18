@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Represents a color with red, green, blue and alpha values.
 #[derive(Debug, Clone)]
 pub struct Color {
     pub red: u8,
@@ -30,6 +31,7 @@ impl Color {
     }
 }
 
+/// Safe wrapper around u8 to represent a pixel's `Color`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Index(u8);
 
@@ -38,6 +40,15 @@ impl Index {
     pub fn value(&self) -> u8 {
         self.0
     }
+}
+
+#[derive(Debug)]
+pub struct Cel {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    pixels: Vec<Index>,
 }
 
 #[derive(Error, Debug)]
@@ -59,7 +70,7 @@ pub struct Layer {
 impl Layer {
     /// Creates a new `Layer`.
     pub fn new(name: &str, width: u32, height: u32) -> Self {
-        let total_pixels = (width * height) as usize;
+        let total_pixels = width as usize * height as usize;
         let pixels = vec![Index(0); total_pixels];
         Self {
             name: name.to_string(),
