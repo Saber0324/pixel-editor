@@ -108,13 +108,10 @@ impl Cel {
 
     /// Returns the `Index` at a canvas position. Outside the cel is transparent.
     fn get(&self, col: u32, row: u32) -> Index {
-        if col < self.x || row < self.y {
+        if !self.contains(col, row) {
             return Index(0);
         }
         let (lx, ly) = (col - self.x, row - self.y);
-        if lx >= self.width || ly >= self.height {
-            return Index(0);
-        }
         self.pixels[ly as usize * self.width as usize + lx as usize]
     }
 
@@ -211,8 +208,8 @@ impl Layer {
     }
 }
 
-/// Creates the default "Background" layer with a single empty slot.
 impl Default for Layer {
+    /// Creates the default "Background" layer with a single empty slot.
     fn default() -> Self {
         Self {
             name: "Background".to_string(),
@@ -240,7 +237,7 @@ impl Frame {
     }
 
     /// Sets how long the Frame stays on screen.
-    pub fn set_duration(&mut self, duration: std::time::Duration) {
+    pub fn set_duration(&mut self, duration: Duration) {
         self.duration = duration;
     }
 }
