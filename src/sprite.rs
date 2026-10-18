@@ -561,6 +561,7 @@ mod tests {
         // Add a new unique layer successfully
         assert!(sprite.add_layer("Foreground").is_ok());
         assert!(sprite.get_layer("Foreground").is_ok());
+        assert!(sprite.get_layer("Foreground").unwrap().is_visible);
 
         // Attempting to add a duplicate layer name should cause a NameCollision
         let duplicate_result = sprite.add_layer("Foreground");
@@ -569,6 +570,8 @@ mod tests {
         // Requesting a non-existent layer should return NotFound
         let missing_result = sprite.get_layer("GhostLayer");
         assert!(matches!(missing_result, Err(LayerError::NotFound(_))));
+
+        assert!(sprite.set_layer_visible("Foreground", false).is_ok());
     }
 
     /// Verifies that the active layer can be successfully switched to an existing layer,
@@ -742,5 +745,47 @@ mod tests {
 
         assert_eq!(pixel_at(&sprite, "Background", 5, 5), red);
         assert_eq!(pixel_at(&sprite, "Background", 1, 2), red);
+    }
+
+    /// Verifies that erasing a position outside a cel doesn't grow it.
+    #[test]
+    fn test_erasing_outside_cel_does_not_grow_it() {
+        let mut sprite = Sprite::new(8, 8);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.set_pixel(3, 2, red);
+        sprite.erase_pixel(0, 0);
+
+        let cel = sprite.get_cel("Background").unwrap().unwrap();
+        assert_eq!((cel.x, cel.y, cel.width, cel.height), (2, 3, 1, 1));
+    }
+
+    /// Verifies that trimming shrinks the rectangle after an erase and keeps the remaining pixels.
+    #[test]
+    fn test_trim_shrinks_to_drawn_pixels() {
+        let mut sprite = Sprite::new(8, 8);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.set_pixel(3, 2, red);
+        sprite.set_pixel(5, 4, red);
+        sprite.erase_pixel(5, 4); // inside the rectangle, so it stays 3x3
+        sprite.trim_active_cel();
+
+        let cel = sprite.get_cel("Background").unwrap().unwrap();
+        assert_eq!((cel.x, cel.y, cel.width, cel.height), (2, 3, 1, 1));
+        assert_eq!(pixel_at(&sprite, "Background", 2, 3), red);
+    }
+
+    /// Verifies that a cel with nothing left drawn becomes `None` after trimming.
+    #[test]
+    fn test_trim_empty_cel_becomes_none() {
+        let mut sprite = Sprite::new(4, 4);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+
+        sprite.set_pixel(0, 0, red);
+        sprite.erase_pixel(0, 0);
+        sprite.trim_active_cel();
+
+        assert!(sprite.get_cel("Background").unwrap().is_none());
     }
 }
