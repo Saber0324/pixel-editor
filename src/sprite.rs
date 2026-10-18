@@ -101,6 +101,11 @@ impl Cel {
         self.pixels = new_pixels;
     }
 
+    /// Returns whether a canvas position is inside the cel's rectangle.
+    fn contains(&self, col: u32, row: u32) -> bool {
+        col >= self.x && row >= self.y && col - self.x < self.width && row - self.y < self.height
+    }
+
     /// Returns the `Index` at a canvas position. Outside the cel is transparent.
     fn get(&self, col: u32, row: u32) -> Index {
         if col < self.x || row < self.y {
