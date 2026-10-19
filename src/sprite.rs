@@ -160,6 +160,13 @@ impl Cel {
         self.pixels = new_pixels;
         true
     }
+
+    pub(crate) fn iter_pixels(&self) -> impl Iterator<Item = (u32, u32, Index)> + '_ {
+        self.pixels.iter().enumerate().map(move |(i, &index)| {
+            let i = i as u32;
+            (self.x + i % self.width, self.y + i / self.width, index)
+        })
+    }
 }
 
 #[derive(Error, Debug)]
@@ -205,6 +212,14 @@ impl Layer {
     /// Sets the visibility.
     pub fn visible(&mut self, visible: bool) {
         self.is_visible = visible;
+    }
+
+    pub(crate) fn is_visible(&self) -> bool {
+        self.is_visible
+    }
+
+    pub(crate) fn cel(&self, frame: usize) -> Option<&Cel> {
+        self.cels.get(frame).and_then(Option::as_ref)
     }
 }
 
@@ -295,6 +310,22 @@ impl Sprite {
             current_frame: 0,
             layers: vec![Layer::default()],
         }
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub(crate) fn layers(&self) -> &[Layer] {
+        &self.layers
+    }
+
+    pub(crate) fn palette_colors(&self, index: Index) -> Option<&Color> {
+        self.palette.get(index.value() as usize)
     }
 
     /// Returns the `usize` index of the selected `Layer`
