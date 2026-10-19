@@ -296,6 +296,9 @@ pub enum SpriteError {
 
     #[error("Invalid frame index: {0}")]
     InvalidFrameIndex(usize),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// An animation made of `Frame`s, with `Layer`s shared across all of them.

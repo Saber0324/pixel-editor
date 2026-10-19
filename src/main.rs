@@ -1,4 +1,5 @@
-use pixel_editor::sprite::{Color, DisplayMode, Index, Sprite};
+use pixel_editor::renderer::render_frame_to_terminal;
+use pixel_editor::sprite::{Color, Index, Sprite};
 
 /// `#` is a pixel, `.` is empty.
 const HEART: [&str; 8] = [
@@ -41,10 +42,8 @@ fn main() {
     draw_art(&mut sprite, "Background", &HEART, red);
     draw_art(&mut sprite, "Shine", &SHINE, white);
 
-    sprite.display_all_layers(DisplayMode::Canvas);
+    print!("\x1b[2J"); // clear the screen once
+    render_frame_to_terminal(&sprite, 0).expect("Should render frame 0");
 
     println!();
-    println!();
-
-    sprite.display_all_layers(DisplayMode::Cel);
 }
