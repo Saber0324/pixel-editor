@@ -2,7 +2,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 /// Represents a color with red, green, blue and alpha values.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -27,8 +27,34 @@ impl Color {
     }
 
     /// Generates a transparent `Color`
-    fn transparent() -> Self {
+    pub(crate) fn transparent() -> Self {
         Self::new(0, 0, 0, 0)
+    }
+
+    /// Draws self over below while keeping in mind the alpha values.
+    pub fn blend(self, below: Color) -> Color {
+        let sa = u32::from(self.alpha);
+        if sa == 0 {
+            return below;
+        }
+        if sa == 255 {
+            return self;
+        }
+
+        let da = u32::from(below.alpha);
+        let out_a = sa + (da * (255 - sa) + 127) / 255;
+
+        let channel = |s: u8, d: u8| -> u8 {
+            let num = u32::from(s) * sa * 255 + u32::from(d) * da * (255 - sa);
+            ((num + out_a * 255 / 2) / (out_a * 255)).min(255) as u8
+        };
+
+        Color::new(
+            channel(self.red, below.red),
+            channel(self.green, below.green),
+            channel(self.blue, below.blue),
+            out_a as u8,
+        )
     }
 }
 
@@ -160,6 +186,13 @@ impl Cel {
         self.pixels = new_pixels;
         true
     }
+
+    pub(crate) fn iter_pixels(&self) -> impl Iterator<Item = (u32, u32, Index)> + '_ {
+        self.pixels.iter().enumerate().map(move |(i, &index)| {
+            let i = i as u32;
+            (self.x + i % self.width, self.y + i / self.width, index)
+        })
+    }
 }
 
 #[derive(Error, Debug)]
@@ -205,6 +238,14 @@ impl Layer {
     /// Sets the visibility.
     pub fn visible(&mut self, visible: bool) {
         self.is_visible = visible;
+    }
+
+    pub(crate) fn is_visible(&self) -> bool {
+        self.is_visible
+    }
+
+    pub(crate) fn cel(&self, frame: usize) -> Option<&Cel> {
+        self.cels.get(frame).and_then(Option::as_ref)
     }
 }
 
@@ -255,6 +296,9 @@ pub enum SpriteError {
 
     #[error("Invalid frame index: {0}")]
     InvalidFrameIndex(usize),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// An animation made of `Frame`s, with `Layer`s shared across all of them.
@@ -295,6 +339,22 @@ impl Sprite {
             current_frame: 0,
             layers: vec![Layer::default()],
         }
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub(crate) fn layers(&self) -> &[Layer] {
+        &self.layers
+    }
+
+    pub(crate) fn palette_colors(&self, index: Index) -> Option<&Color> {
+        self.palette.get(index.value() as usize)
     }
 
     /// Returns the `usize` index of the selected `Layer`
@@ -502,6 +562,13 @@ impl Sprite {
             .ok_or(SpriteError::InvalidFrameIndex(index))?
             .set_duration(duration);
         Ok(())
+    }
+
+    pub fn get_frame_duration(&self, index: usize) -> Result<Duration, SpriteError> {
+        self.frames
+            .get(index)
+            .map(Frame::duration)
+            .ok_or(SpriteError::InvalidFrameIndex(index))
     }
 }
 
