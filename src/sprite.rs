@@ -2,7 +2,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 /// Represents a color with red, green, blue and alpha values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -12,7 +12,7 @@ pub struct Color {
 
 impl Color {
     /// Creates a new color with the provided RGBA values.
-    pub fn new(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
+    pub const fn new(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
         Self {
             red,
             green,
@@ -27,9 +27,7 @@ impl Color {
     }
 
     /// Generates a transparent `Color`
-    pub(crate) fn transparent() -> Self {
-        Self::new(0, 0, 0, 0)
-    }
+    pub(crate) const TRANSPARENT: Self = Self::new(0, 0, 0, 0);
 
     /// Draws self over below while keeping in mind the alpha values.
     #[must_use]
@@ -334,7 +332,7 @@ impl Sprite {
         Self {
             width,
             height,
-            palette: vec![Color::transparent()],
+            palette: vec![Color::TRANSPARENT],
             active_layer: 0,
             frames: vec![Frame::default()],
             current_frame: 0,
@@ -608,7 +606,7 @@ mod tests {
         color.change_alpha(128);
         assert_eq!(color.alpha, 128);
 
-        assert_eq!(Color::transparent().alpha, 0);
+        assert_eq!(Color::TRANSPARENT.alpha, 0);
     }
 
     /// Verifies that the `Index` wrapper type correctly holds a `u8` value

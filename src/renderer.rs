@@ -11,7 +11,7 @@ pub fn render_frame(sprite: &Sprite, frame: usize) -> Result<Vec<Color>, SpriteE
 
     let width = sprite.width() as usize;
     let height = sprite.height() as usize;
-    let mut canvas = vec![Color::transparent(); width * height];
+    let mut canvas = vec![Color::TRANSPARENT; width * height];
 
     for layer in sprite.layers().iter().filter(|layer| layer.is_visible()) {
         let Some(cel) = layer.cel(frame) else {
