@@ -48,7 +48,7 @@ pub fn render_frame_to_terminal(sprite: &Sprite, frame: usize) -> Result<(), Spr
                     "\x1b[48;2;{};{};{}m  ",
                     color.red, color.green, color.blue
                 )
-                .unwrap();
+                .expect("Should be able to write to the buffer");
             }
         }
         buf.push_str("\x1b[0m\n"); // resets ansi formatting.
@@ -64,7 +64,7 @@ pub fn play_animation_terminal(sprite: &Sprite, loops: Option<usize>) -> Result<
     let mut out = std::io::stdout();
     write!(out, "\x1b[2J\x1b[?25l")?;
     let mut played = 0;
-    while loops.map_or(true, |max| played < max) {
+    while loops.is_none_or(|max| played < max) {
         for frame in 0..sprite.get_frame_count() {
             let start = Instant::now();
             render_frame_to_terminal(sprite, frame)?;

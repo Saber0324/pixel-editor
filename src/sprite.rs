@@ -32,7 +32,8 @@ impl Color {
     }
 
     /// Draws self over below while keeping in mind the alpha values.
-    pub fn blend(self, below: Color) -> Color {
+    #[must_use]
+    pub fn blend(self, below: Self) -> Self {
         let sa = u32::from(self.alpha);
         if sa == 0 {
             return below;
@@ -49,11 +50,11 @@ impl Color {
             ((num + out_a * 255 / 2) / (out_a * 255)).min(255) as u8
         };
 
-        Color::new(
+        Self::new(
             channel(self.red, below.red),
             channel(self.green, below.green),
             channel(self.blue, below.blue),
-            out_a as u8,
+            u8::try_from(out_a).expect("Should not wrap"),
         )
     }
 }
@@ -189,7 +190,7 @@ impl Cel {
 
     pub(crate) fn iter_pixels(&self) -> impl Iterator<Item = (u32, u32, Index)> + '_ {
         self.pixels.iter().enumerate().map(move |(i, &index)| {
-            let i = i as u32;
+            let i = u32::try_from(i).expect("Should not wrap");
             (self.x + i % self.width, self.y + i / self.width, index)
         })
     }
@@ -625,7 +626,7 @@ mod tests {
         let mut layer = Layer::new("TestLayer", 1);
         assert_eq!(layer.get_name(), "TestLayer");
 
-        assert!(layer.cels == vec![None]);
+        assert_eq!(layer.cels, vec![None]);
 
         layer.set_name("RenamedLayer");
         assert_eq!(layer.get_name(), "RenamedLayer");
