@@ -2,7 +2,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 /// Represents a color with red, green, blue and alpha values.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -27,8 +27,34 @@ impl Color {
     }
 
     /// Generates a transparent `Color`
-    fn transparent() -> Self {
+    pub(crate) fn transparent() -> Self {
         Self::new(0, 0, 0, 0)
+    }
+
+    /// Draws self over below while keeping in mind the alpha values.
+    pub fn blend(self, below: Color) -> Color {
+        let sa = u32::from(self.alpha);
+        if sa == 0 {
+            return below;
+        }
+        if sa == 255 {
+            return self;
+        }
+
+        let da = u32::from(below.alpha);
+        let out_a = sa + (da * (255 - sa) + 127) / 255;
+
+        let channel = |s: u8, d: u8| -> u8 {
+            let num = u32::from(s) * sa * 255 + u32::from(d) * da * (255 - sa);
+            ((num + out_a * 255 / 2) / (out_a * 255)).min(255) as u8
+        };
+
+        Color::new(
+            channel(self.red, below.red),
+            channel(self.green, below.green),
+            channel(self.blue, below.blue),
+            out_a as u8,
+        )
     }
 }
 
