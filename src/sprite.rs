@@ -563,6 +563,13 @@ impl Sprite {
             .set_duration(duration);
         Ok(())
     }
+
+    pub fn get_frame_duration(&self, index: usize) -> Result<Duration, SpriteError> {
+        self.frames
+            .get(index)
+            .map(Frame::duration)
+            .ok_or(SpriteError::InvalidFrameIndex(index))
+    }
 }
 
 #[cfg(test)]

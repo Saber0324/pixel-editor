@@ -1,49 +1,183 @@
-use pixel_editor::renderer::render_frame_to_terminal;
+use std::time::Duration;
+
+use pixel_editor::renderer::play_animation_terminal;
 use pixel_editor::sprite::{Color, Index, Sprite};
 
-/// `#` is a pixel, `.` is empty.
-const HEART: [&str; 8] = [
-    ".##...##.",
-    "####.####",
-    "#########",
-    "#########",
-    ".#######.",
-    "..#####..",
-    "...###...",
-    "....#....",
+const WIDTH: u32 = 33;
+const HEIGHT: u32 = 13;
+
+/// Pac-Man is 13x13, at the left edge.
+const PAC_SIZE: i32 = 13;
+
+/// `#` is a pixel, `.` is empty. Frame order: closed, half, wide, half.
+const PAC_FRAMES: [[&str; 13]; 4] = [
+    // 0: mouth closed
+    [
+        "....#####....",
+        "..#########..",
+        ".###########.",
+        ".###########.",
+        "#############",
+        "#############",
+        "#############",
+        "#############",
+        "#############",
+        ".###########.",
+        ".###########.",
+        "..#########..",
+        "....#####....",
+    ],
+    // 1: mouth half open
+    [
+        "....#####....",
+        "..#########..",
+        ".###########.",
+        ".###########.",
+        "##########...",
+        "########.....",
+        "#######......",
+        "########.....",
+        "##########...",
+        ".###########.",
+        ".###########.",
+        "..#########..",
+        "....#####....",
+    ],
+    // 2: mouth wide open
+    [
+        "....#####....",
+        "..#########..",
+        ".#########...",
+        ".########....",
+        "########.....",
+        "#######......",
+        "######.......",
+        "#######......",
+        "########.....",
+        ".########....",
+        ".#########...",
+        "..#########..",
+        "....#####....",
+    ],
+    // 3: mouth half open again
+    [
+        "....#####....",
+        "..#########..",
+        ".###########.",
+        ".###########.",
+        "##########...",
+        "########.....",
+        "#######......",
+        "########.....",
+        "##########...",
+        ".###########.",
+        ".###########.",
+        "..#########..",
+        "....#####....",
+    ],
 ];
 
-const SHINE: [&str; 3] = [".........", ".##......", ".#......."];
+/// Small highlight on the upper left, drawn above the body.
+const SHINE: [&str; 4] = [
+    ".............",
+    ".............",
+    "...##........",
+    "..#..........",
+];
 
-/// Paints every `#` of the art on the given layer of the current frame.
-fn draw_art(sprite: &mut Sprite, layer: &str, art: &[&str], color: Index) {
+/// One eye, 1 pixel wide and 2 tall.
+const EYE: [&str; 4] = [
+    ".............",
+    ".............",
+    ".......#.....",
+    ".......#.....",
+];
+
+/// A round-ish pellet (plus shape), 3x3.
+const PELLET: [&str; 3] = [".#.", "###", ".#."];
+
+const FRAME_MS: u64 = 120;
+
+/// Pellets are 8 pixels apart and move 2 pixels per frame,
+/// so after 4 frames the pattern repeats exactly.
+const PELLET_SPACING: i32 = 8;
+const PELLET_SPEED: i32 = 2;
+
+/// Paints every `#` of the art on the given layer, with its top-left at (x0, y0).
+fn draw_art(sprite: &mut Sprite, layer: &str, art: &[&str], color: Index, x0: i32, y0: i32) {
     sprite.set_active_layer(layer).expect("Layer should exist");
 
-    for (row, line) in (0u32..).zip(art) {
-        for (col, ch) in (0u32..).zip(line.chars()) {
+    for (row, line) in (0i32..).zip(art) {
+        for (col, ch) in (0i32..).zip(line.chars()) {
             if ch == '#' {
-                sprite.set_pixel(col, row, color);
+                let (x, y) = (x0 + col, y0 + row);
+                if x >= 0 && y >= 0 && (x as u32) < WIDTH && (y as u32) < HEIGHT {
+                    sprite.set_pixel(x as u32, y as u32, color);
+                }
             }
         }
     }
 }
 
+/// Draws the scrolling pellets for the given frame number.
+fn draw_pellets(sprite: &mut Sprite, frame: i32, color: Index) {
+    let mut x = PAC_SIZE + 1 - PELLET_SPEED * frame;
+    // Move the first pellet to the first slot that is clear of Pac-Man.
+    while x < PAC_SIZE + 1 {
+        x += PELLET_SPACING;
+    }
+    while x + 2 < WIDTH as i32 {
+        draw_art(
+            sprite,
+            "Background",
+            &PELLET,
+            color,
+            x,
+            (HEIGHT / 2) as i32 - 1,
+        );
+        x += PELLET_SPACING;
+    }
+}
+
 fn main() {
-    let mut sprite = Sprite::new(9, 8);
-    let red = sprite
-        .add_color(Color::new(220, 20, 60, 255))
+    let mut sprite = Sprite::new(WIDTH, HEIGHT);
+    let yellow = sprite
+        .add_color(Color::new(255, 221, 0, 255))
         .expect("Should have less than 256 colors");
-    let white = sprite
-        .add_color(Color::new(255, 255, 255, 255))
+    let light = sprite
+        .add_color(Color::new(255, 245, 150, 255))
+        .expect("Should have less than 256 colors");
+    let black = sprite
+        .add_color(Color::new(20, 20, 20, 255))
+        .expect("Should have less than 256 colors");
+    let cream = sprite
+        .add_color(Color::new(255, 224, 189, 255))
         .expect("Should have less than 256 colors");
 
+    sprite
+        .add_layer("Pacman")
+        .expect("Name should be available");
     sprite.add_layer("Shine").expect("Name should be available");
+    sprite.add_layer("Eye").expect("Name should be available");
 
-    draw_art(&mut sprite, "Background", &HEART, red);
-    draw_art(&mut sprite, "Shine", &SHINE, white);
+    // Create all frames first, then draw, so nothing leaks between frames
+    // whether or not `add_frame` copies the previous one.
+    for _ in 1..PAC_FRAMES.len() {
+        sprite.add_frame();
+    }
 
-    print!("\x1b[2J"); // clear the screen once
-    render_frame_to_terminal(&sprite, 0).expect("Should render frame 0");
+    for (i, art) in PAC_FRAMES.iter().enumerate() {
+        sprite.set_current_frame(i).expect("Frame should exist");
 
-    println!();
+        draw_pellets(&mut sprite, i as i32, cream);
+        draw_art(&mut sprite, "Pacman", art, yellow, 0, 0);
+        draw_art(&mut sprite, "Shine", &SHINE, light, 0, 0);
+        draw_art(&mut sprite, "Eye", &EYE, black, 0, 0);
+
+        sprite
+            .set_frame_duration(i, Duration::from_millis(FRAME_MS))
+            .expect("Frame should exist");
+    }
+
+    play_animation_terminal(&sprite, None).expect("Should play the animation"); // None = loop forever
 }

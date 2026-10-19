@@ -1,6 +1,8 @@
 use crate::sprite::{Color, Sprite, SpriteError};
 use std::fmt::Write as _;
 use std::io::{self, Write};
+use std::thread;
+use std::time::Instant;
 
 pub fn render_frame(sprite: &Sprite, frame: usize) -> Result<Vec<Color>, SpriteError> {
     if frame >= sprite.get_frame_count() {
@@ -55,5 +57,26 @@ pub fn render_frame_to_terminal(sprite: &Sprite, frame: usize) -> Result<(), Spr
     let mut out = io::stdout().lock();
     out.write_all(buf.as_bytes())?;
     out.flush()?;
+    Ok(())
+}
+
+pub fn play_animation_terminal(sprite: &Sprite, loops: Option<usize>) -> Result<(), SpriteError> {
+    let mut out = std::io::stdout();
+    write!(out, "\x1b[2J\x1b[?25l")?;
+    let mut played = 0;
+    while loops.map_or(true, |max| played < max) {
+        for frame in 0..sprite.get_frame_count() {
+            let start = Instant::now();
+            render_frame_to_terminal(sprite, frame)?;
+            let duration = sprite.get_frame_duration(frame)?;
+            if let Some(rest) = duration.checked_sub(start.elapsed()) {
+                thread::sleep(rest);
+            }
+        }
+        played += 1;
+    }
+    write!(out, "\x1b[0m\x1b[?25h")?;
+    out.flush()?;
+
     Ok(())
 }
