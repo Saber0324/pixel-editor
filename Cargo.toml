@@ -3,15 +3,6 @@ name = "pixel-editor"
 version = "0.1.0"
 edition = "2024"
 
-[[example]]
-name = "heart"
-
-[[example]]
-name = "pacman"
-
-[[example]]
-name = "nyan"
-
 [dependencies]
 thiserror = "2.0.21"
 image = { version = "0.25", default-features = false, features = [
