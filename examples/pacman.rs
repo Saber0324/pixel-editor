@@ -111,8 +111,8 @@ fn draw_art(sprite: &mut Sprite, layer: &str, art: &[&str], color: Index, x0: i3
         for (col, ch) in (0i32..).zip(line.chars()) {
             if ch == '#' {
                 let (x, y) = (x0 + col, y0 + row);
-                if x >= 0 && y >= 0 && (x as u32) < WIDTH && (y as u32) < HEIGHT {
-                    sprite.set_pixel(x as u32, y as u32, color);
+                if x >= 0 && y >= 0 && (x.cast_unsigned()) < WIDTH && (y.cast_unsigned()) < HEIGHT {
+                    sprite.set_pixel(x.cast_unsigned(), y.cast_unsigned(), color);
                 }
             }
         }
@@ -126,14 +126,14 @@ fn draw_pellets(sprite: &mut Sprite, frame: i32, color: Index) {
     while x < PAC_SIZE + 1 {
         x += PELLET_SPACING;
     }
-    while x + 2 < WIDTH as i32 {
+    while x + 2 < WIDTH.cast_signed() {
         draw_art(
             sprite,
             "Background",
             &PELLET,
             color,
             x,
-            (HEIGHT / 2) as i32 - 1,
+            (HEIGHT / 2).cast_signed() - 1,
         );
         x += PELLET_SPACING;
     }
@@ -169,7 +169,11 @@ fn main() {
     for (i, art) in PAC_FRAMES.iter().enumerate() {
         sprite.set_current_frame(i).expect("Frame should exist");
 
-        draw_pellets(&mut sprite, i as i32, cream);
+        draw_pellets(
+            &mut sprite,
+            i32::try_from(i).expect("Should not wrap"),
+            cream,
+        );
         draw_art(&mut sprite, "Pacman", art, yellow, 0, 0);
         draw_art(&mut sprite, "Shine", &SHINE, light, 0, 0);
         draw_art(&mut sprite, "Eye", &EYE, black, 0, 0);

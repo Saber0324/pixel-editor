@@ -2,7 +2,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 /// Represents a color with red, green, blue and alpha values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Color {
     pub red: u8,
     pub green: u8,
@@ -12,7 +12,7 @@ pub struct Color {
 
 impl Color {
     /// Creates a new color with the provided RGBA values.
-    pub fn new(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
+    pub const fn new(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
         Self {
             red,
             green,
@@ -27,12 +27,11 @@ impl Color {
     }
 
     /// Generates a transparent `Color`
-    pub(crate) fn transparent() -> Self {
-        Self::new(0, 0, 0, 0)
-    }
+    pub(crate) const TRANSPARENT: Self = Self::new(0, 0, 0, 0);
 
     /// Draws self over below while keeping in mind the alpha values.
-    pub fn blend(self, below: Color) -> Color {
+    #[must_use]
+    pub fn blend(self, below: Self) -> Self {
         let sa = u32::from(self.alpha);
         if sa == 0 {
             return below;
@@ -49,11 +48,11 @@ impl Color {
             ((num + out_a * 255 / 2) / (out_a * 255)).min(255) as u8
         };
 
-        Color::new(
+        Self::new(
             channel(self.red, below.red),
             channel(self.green, below.green),
             channel(self.blue, below.blue),
-            out_a as u8,
+            u8::try_from(out_a).expect("Should not wrap"),
         )
     }
 }
@@ -189,7 +188,7 @@ impl Cel {
 
     pub(crate) fn iter_pixels(&self) -> impl Iterator<Item = (u32, u32, Index)> + '_ {
         self.pixels.iter().enumerate().map(move |(i, &index)| {
-            let i = i as u32;
+            let i = u32::try_from(i).expect("Should not wrap");
             (self.x + i % self.width, self.y + i / self.width, index)
         })
     }
@@ -333,7 +332,7 @@ impl Sprite {
         Self {
             width,
             height,
-            palette: vec![Color::transparent()],
+            palette: vec![Color::TRANSPARENT],
             active_layer: 0,
             frames: vec![Frame::default()],
             current_frame: 0,
@@ -607,7 +606,7 @@ mod tests {
         color.change_alpha(128);
         assert_eq!(color.alpha, 128);
 
-        assert_eq!(Color::transparent().alpha, 0);
+        assert_eq!(Color::TRANSPARENT.alpha, 0);
     }
 
     /// Verifies that the `Index` wrapper type correctly holds a `u8` value
@@ -625,7 +624,7 @@ mod tests {
         let mut layer = Layer::new("TestLayer", 1);
         assert_eq!(layer.get_name(), "TestLayer");
 
-        assert!(layer.cels == vec![None]);
+        assert_eq!(layer.cels, vec![None]);
 
         layer.set_name("RenamedLayer");
         assert_eq!(layer.get_name(), "RenamedLayer");
