@@ -3,15 +3,6 @@ name = "pixel-editor"
 version = "0.1.0"
 edition = "2024"
 
-[[example]]
-name = "heart"
-
-[[example]]
-name = "pacman"
-
-[[example]]
-name = "nyan"
-
 [dependencies]
 thiserror = "2.0.21"
 image = { version = "0.25", default-features = false, features = [
@@ -32,8 +23,6 @@ significant_drop_tightening = "allow"
 suboptimal_flops = "allow"
 useless_let_if_seq = "allow"
 
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
 map_unwrap_or = "allow"
