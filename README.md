@@ -18,6 +18,11 @@ cargo run --example pacman
 ```
 Do note that these tests are meant to render / play these gifs via ANSI; this best works on the Windows Terminal or Kitty, most likely won't work in plain CMD.
 
+To use the interactive `repl`, run with:
+```
+cargo run --features repl --bin repl
+```
+
 ## **Contributing**
 I would put something here, but SOMEONE has only ran `touch CONTRIBUTING.md` and nothing else. So there is not much to say here, be patient :3
 
