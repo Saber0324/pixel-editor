@@ -1,3 +1,4 @@
+use std::ops::{Bound, RangeBounds};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -94,13 +95,13 @@ impl Cel {
         }
     }
 
-    /// Enlarges the cel's rectangle so it contains the given canvas position.
-    /// New area is filled with transparent pixels.
-    fn grow_to_include(&mut self, col: u32, row: u32) {
-        let new_x = self.x.min(col);
-        let new_y = self.y.min(row);
-        let new_right = (self.x + self.width).max(col + 1);
-        let new_bottom = (self.y + self.height).max(row + 1);
+    // Cel
+    /// Enlarges the rectangle so it covers the given canvas rectangle (inclusive corners).
+    fn grow_to_cover(&mut self, left: u32, top: u32, right: u32, bottom: u32) {
+        let new_x = self.x.min(left);
+        let new_y = self.y.min(top);
+        let new_right = (self.x + self.width).max(right + 1);
+        let new_bottom = (self.y + self.height).max(bottom + 1);
         let new_width = new_right - new_x;
         let new_height = new_bottom - new_y;
 
@@ -124,6 +125,35 @@ impl Cel {
         self.width = new_width;
         self.height = new_height;
         self.pixels = new_pixels;
+    }
+
+    /// Enlarges the cel's rectangle so it contains the given canvas position.
+    /// New area is filled with transparent pixels.
+    fn grow_to_include(&mut self, col: u32, row: u32) {
+        self.grow_to_cover(col, row, col, row);
+    }
+
+    /// Fills the inclusive canvas rectangle, growing the cel at most once.
+    /// Writing transparent pixels never grows it, so only the part inside the rectangle is cleared.
+    fn set_rect(&mut self, left: u32, top: u32, right: u32, bottom: u32, index: Index) {
+        let (mut left, mut top, mut right, mut bottom) = (left, top, right, bottom);
+        if index == Index(0) {
+            left = left.max(self.x);
+            top = top.max(self.y);
+            right = right.min(self.x + self.width - 1);
+            bottom = bottom.min(self.y + self.height - 1);
+            if left > right || top > bottom {
+                return;
+            }
+        } else {
+            self.grow_to_cover(left, top, right, bottom);
+        }
+        let width = self.width as usize;
+        let len = (right - left + 1) as usize;
+        for row in top..=bottom {
+            let start = (row - self.y) as usize * width + (left - self.x) as usize;
+            self.pixels[start..start + len].fill(index);
+        }
     }
 
     /// Returns whether a canvas position is inside the cel's rectangle.
@@ -201,6 +231,9 @@ pub enum LayerError {
 
     #[error("A Layer with this name already exists")]
     NameCollision,
+
+    #[error("Can't remove the last layer from the Sprite")]
+    LastLayer,
 }
 
 /// A named layer, shared by every `Frame` of a `Sprite`.
@@ -298,6 +331,12 @@ pub enum SpriteError {
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Invalid color index: {0}")]
+    InvalidColorIndex(u8),
+
+    #[error("Can't remove the last frame of the Sprite")]
+    LastFrame,
 }
 
 /// An animation made of `Frame`s, with `Layer`s shared across all of them.
@@ -324,6 +363,23 @@ pub enum DisplayMode {
     /// What is actually stored: `.` is a transparent pixel inside the `Cel`, and a blank
     /// is anything not stored (no `Cel`, or outside its rectangle).
     Cel,
+}
+
+/// Resolves a range against the canvas width into inclusive ends.
+/// Returns `None` if the range is empty or entirely outside the canvas.
+fn resolve_range(range: impl RangeBounds<u32>, width: u32) -> Option<(u32, u32)> {
+    let from = match range.start_bound() {
+        Bound::Included(&start) => start,
+        Bound::Excluded(&start) => start.checked_add(1)?,
+        Bound::Unbounded => 0,
+    };
+    let to = match range.end_bound() {
+        Bound::Included(&end) => end,
+        Bound::Excluded(&end) => end.checked_sub(1)?,
+        Bound::Unbounded => width.checked_sub(1)?,
+    };
+    let to = to.min(width.checked_sub(1)?);
+    (from <= to).then_some((from, to))
 }
 
 impl Sprite {
@@ -368,6 +424,19 @@ impl Sprite {
             .ok_or_else(|| LayerError::NotFound(name.to_string()))
     }
 
+    /// Returns the `Index` of an existing palette entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SpriteError::InvalidColorIndex` if the palette has no such entry.
+    pub fn palette_index(&self, value: u8) -> Result<Index, SpriteError> {
+        if usize::from(value) < self.palette.len() {
+            Ok(Index(value))
+        } else {
+            Err(SpriteError::InvalidColorIndex(value))
+        }
+    }
+
     /// Returns a reference to a `Layer` of the `Sprite`.
     ///
     /// # Errors
@@ -375,6 +444,15 @@ impl Sprite {
     /// Returns `LayerError::NotFound` if no `Layer` has that name.
     pub fn get_layer(&self, name: &str) -> Result<&Layer, LayerError> {
         Ok(&self.layers[self.get_layer_index(name)?])
+    }
+
+    /// Returns a reference to the `Sprite.active_layer` of the `Sprite`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `LayerError::NotFound` if no `Layer` is found.
+    pub fn get_active_layer(&self) -> Result<&Layer, LayerError> {
+        Ok(&self.layers[self.active_layer])
     }
 
     /// Returns the `Cel` of a `Layer` in the current frame, or `None` if nothing is drawn there.
@@ -447,6 +525,29 @@ impl Sprite {
         Ok(())
     }
 
+    /// Removes a `Layer` and all of its `Cel`s.
+    ///
+    /// If the active `Layer` is removed, the `Layer` above it becomes active
+    /// (or the one below, if it was the top one).
+    ///
+    /// # Errors
+    ///
+    /// Returns `LayerError::NotFound` if no `Layer` has that name, and
+    /// `LayerError::LastLayer` if it is the only one left.
+    pub fn remove_layer(&mut self, name: &str) -> Result<(), LayerError> {
+        let index = self.get_layer_index(name)?;
+        if self.layers.len() == 1 {
+            return Err(LayerError::LastLayer);
+        }
+        self.layers.remove(index);
+
+        if self.active_layer > index {
+            self.active_layer -= 1;
+        }
+        self.active_layer = self.active_layer.min(self.layers.len() - 1);
+        Ok(())
+    }
+
     /// Resets a pixel to `Index(0)`, making it transparent.
     /// Erasing where no `Cel` exists does nothing.
     pub fn erase_pixel(&mut self, col: u32, row: u32) {
@@ -514,6 +615,17 @@ impl Sprite {
         }
     }
 
+    /// Prints the active `Layer`'s grid for the current frame in the given `DisplayMode`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `LayerError::NotFound` if no `Layer` has that name.
+    pub fn display_active_layer(&self, mode: DisplayMode) -> Result<(), LayerError> {
+        let layer = self.get_active_layer()?;
+        self.display_layer_data(layer, mode);
+        Ok(())
+    }
+
     /// Adds a `Frame` with the default duration, and an empty slot in every `Layer`.
     pub fn add_frame(&mut self) {
         self.frames.push(Frame::default());
@@ -546,6 +658,34 @@ impl Sprite {
         self.current_frame
     }
 
+    /// Removes a `Frame` and the `Cel` of every `Layer` in it.
+    ///
+    /// The current frame keeps pointing at the same `Frame` when possible, and is
+    /// clamped to the last one otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SpriteError::InvalidFrameIndex` if the `Frame` doesn't exist, and
+    /// `SpriteError::LastFrame` if it is the only one left.
+    pub fn remove_frame(&mut self, index: usize) -> Result<(), SpriteError> {
+        if index >= self.frames.len() {
+            return Err(SpriteError::InvalidFrameIndex(index));
+        }
+        if self.frames.len() == 1 {
+            return Err(SpriteError::LastFrame);
+        }
+        self.frames.remove(index);
+        for layer in &mut self.layers {
+            layer.cels.remove(index);
+        }
+
+        if self.current_frame > index {
+            self.current_frame -= 1;
+        }
+        self.current_frame = self.current_frame.min(self.frames.len() - 1);
+        Ok(())
+    }
+
     /// Sets how long a `Frame` stays on screen.
     ///
     /// # Errors
@@ -568,6 +708,40 @@ impl Sprite {
             .get(index)
             .map(Frame::duration)
             .ok_or(SpriteError::InvalidFrameIndex(index))
+    }
+
+    /// Fills a rectangle on the active `Layer` in the current frame. Each axis accepts any range
+    /// form. Empty or off-canvas ranges do nothing, and ranges past the canvas edge are clipped.
+    pub fn set_rect(
+        &mut self,
+        cols: impl RangeBounds<u32>,
+        rows: impl RangeBounds<u32>,
+        index: Index,
+    ) {
+        let (Some((left, right)), Some((top, bottom))) = (
+            resolve_range(cols, self.width),
+            resolve_range(rows, self.height),
+        ) else {
+            return;
+        };
+        let slot = &mut self.layers[self.active_layer].cels[self.current_frame];
+        match slot {
+            Some(cel) => cel.set_rect(left, top, right, bottom, index),
+            None if index == Index(0) => {}
+            None => {
+                let mut cel = Cel::single(left, top, index);
+                cel.set_rect(left, top, right, bottom, index);
+                *slot = Some(cel);
+            }
+        }
+    }
+
+    pub fn set_row(&mut self, row: u32, cols: impl RangeBounds<u32>, index: Index) {
+        self.set_rect(cols, row..=row, index);
+    }
+
+    pub fn set_col(&mut self, col: u32, rows: impl RangeBounds<u32>, index: Index) {
+        self.set_rect(col..=col, rows, index);
     }
 }
 
@@ -924,5 +1098,96 @@ mod tests {
         sprite.trim_active_cel();
 
         assert!(sprite.get_cel("Background").unwrap().is_none());
+    }
+
+    /// Verifies that removing a layer drops it and its cels, and that the last layer is protected.
+    #[test]
+    fn test_remove_layer() {
+        let mut sprite = Sprite::new(4, 4);
+        sprite.add_layer("Foreground").unwrap();
+
+        assert!(sprite.remove_layer("Foreground").is_ok());
+        assert!(sprite.get_layer("Foreground").is_err());
+        assert_eq!(sprite.layers.len(), 1);
+
+        assert!(matches!(
+            sprite.remove_layer("Ghost"),
+            Err(LayerError::NotFound(_))
+        ));
+        assert!(matches!(
+            sprite.remove_layer("Background"),
+            Err(LayerError::LastLayer)
+        ));
+    }
+
+    /// Verifies that the active layer keeps pointing at the same layer when one below it is removed,
+    /// and falls back to a valid layer when the active one is removed.
+    #[test]
+    fn test_remove_layer_keeps_active_layer_valid() {
+        let mut sprite = Sprite::new(4, 4);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+        sprite.add_layer("A").unwrap();
+        sprite.add_layer("B").unwrap();
+
+        // Active "B" (index 2), remove "A" (index 1): "B" moves down and stays active.
+        sprite.set_active_layer("B").unwrap();
+        sprite.remove_layer("A").unwrap();
+        assert_eq!(sprite.active_layer, 1);
+        sprite.set_pixel(0, 0, red);
+        assert_eq!(pixel_at(&sprite, "B", 0, 0), red);
+
+        // Remove the active top layer: the one below becomes active.
+        sprite.remove_layer("B").unwrap();
+        assert_eq!(sprite.active_layer, 0);
+    }
+
+    /// Verifies that removing a frame removes the right cels and durations, so the later
+    /// frames shift down, and that the last frame is protected.
+    #[test]
+    fn test_remove_frame() {
+        let mut sprite = Sprite::new(4, 4);
+        let red = sprite.add_color(Color::new(255, 0, 0, 255)).unwrap();
+        let blue = sprite.add_color(Color::new(0, 0, 255, 255)).unwrap();
+
+        sprite.set_pixel(0, 0, red); // frame 0
+        sprite.add_frame();
+        sprite.set_current_frame(1).unwrap();
+        sprite.set_pixel(0, 0, blue); // frame 1
+        sprite
+            .set_frame_duration(1, Duration::from_millis(250))
+            .unwrap();
+
+        sprite.remove_frame(0).unwrap();
+
+        assert_eq!(sprite.get_frame_count(), 1);
+        assert_eq!(sprite.layers[0].cels.len(), 1);
+        assert_eq!(sprite.frames[0].duration(), Duration::from_millis(250));
+        assert_eq!(pixel_at(&sprite, "Background", 0, 0), blue);
+
+        assert!(matches!(
+            sprite.remove_frame(0),
+            Err(SpriteError::LastFrame)
+        ));
+        assert!(matches!(
+            sprite.remove_frame(5),
+            Err(SpriteError::InvalidFrameIndex(5))
+        ));
+    }
+
+    /// Verifies that the current frame stays valid after removing frames before it or at the end.
+    #[test]
+    fn test_remove_frame_keeps_current_frame_valid() {
+        let mut sprite = Sprite::new(4, 4);
+        sprite.add_frame();
+        sprite.add_frame();
+
+        // On frame 2, remove frame 0: the same frame is now at index 1.
+        sprite.set_current_frame(2).unwrap();
+        sprite.remove_frame(0).unwrap();
+        assert_eq!(sprite.get_current_frame_index(), 1);
+
+        // On the last frame, remove it: clamp to the new last one.
+        sprite.remove_frame(1).unwrap();
+        assert_eq!(sprite.get_current_frame_index(), 0);
     }
 }
