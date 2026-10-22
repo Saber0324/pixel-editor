@@ -3,10 +3,20 @@ use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::thread;
 use std::time::Instant;
+use thiserror::Error;
 
-pub fn render_frame(sprite: &Sprite, frame: usize) -> Result<Vec<Color>, SpriteError> {
+#[derive(Error, Debug)]
+pub enum RendererError {
+    #[error(transparent)]
+    Sprite(#[from] SpriteError),
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+pub fn render_frame(sprite: &Sprite, frame: usize) -> Result<Vec<Color>, RendererError> {
     if frame >= sprite.get_frame_count() {
-        return Err(SpriteError::InvalidFrameIndex(frame));
+        Err(SpriteError::InvalidFrameIndex(frame))?;
     }
 
     let width = sprite.width() as usize;
@@ -31,7 +41,7 @@ pub fn render_frame(sprite: &Sprite, frame: usize) -> Result<Vec<Color>, SpriteE
     Ok(canvas)
 }
 
-pub fn render_frame_to_terminal(sprite: &Sprite, frame: usize) -> Result<(), SpriteError> {
+pub fn render_frame_to_terminal(sprite: &Sprite, frame: usize) -> Result<(), RendererError> {
     let canvas = render_frame(sprite, frame)?;
     let width = sprite.width() as usize;
 
@@ -60,7 +70,7 @@ pub fn render_frame_to_terminal(sprite: &Sprite, frame: usize) -> Result<(), Spr
     Ok(())
 }
 
-pub fn play_animation_terminal(sprite: &Sprite, loops: Option<usize>) -> Result<(), SpriteError> {
+pub fn play_animation_terminal(sprite: &Sprite, loops: Option<usize>) -> Result<(), RendererError> {
     let mut out = std::io::stdout();
     write!(out, "\x1b[2J\x1b[?25l")?;
     let mut played = 0;
