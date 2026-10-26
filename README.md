@@ -7,15 +7,25 @@ A pixel art editor written in Rust, inspired by LibreSprite and Aseprite.
 - A custom, documented and hardened file format.
 - Longer term; the same team plans to build a 2D game engine on top of this.
 
-## **Building**
+### Building
+
 You need a recent stable Rust toolchain (the project uses the 2024 edition, so Rust 1.85 or newer).
+
+This is a Cargo workspace. Run the commands below from the repository root to build or test all crates.
+
 ```
-cargo build
-cargo test
-cargo run --example heart
-cargo run --example nyan
-cargo run --example pacman
+cargo build --workspace
+cargo test --workspace
 ```
+
+The examples live in the `renderer` crate, so select it with `-p`:
+
+```
+cargo run -p renderer --example heart
+cargo run -p renderer --example nyan
+cargo run -p renderer --example pacman
+```
+
 Do note that these tests are meant to render / play these gifs via ANSI; this best works on the Windows Terminal or Kitty, most likely won't work in plain CMD.
 
 ## **Contributing**
