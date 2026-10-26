@@ -1,0 +1,80 @@
+25
+16
+add color 0 0 0 255
+add color 140 180 20 255
+add color 16 120 8 255
+add color 160 197 125 255
+add color 101 171 68 255
+add color 235 160 150 255
+add color 255 255 255 255
+set layer Background
+set rect 0 0 24 15 7
+add layer Grass
+set layer Grass
+set col 19 6 7 4
+set col 23 7 8 4
+set px 4 8 4
+set col 20 8 9 4
+set col 3 9 13 4
+set col 22 9 10 4
+set col 1 10 11 4
+set col 21 10 13 4
+set px 2 12 4
+set row 14 1 22 5
+set row 15 2 21 5
+add layer Snake
+set layer Snake
+set row 0 9 13 1
+set col 8 1 2 1
+set rect 9 1 13 2 2
+set px 14 1 1
+set col 14 2 4 2
+set col 15 2 3 1
+set col 7 3 5 1
+set col 8 3 4 2
+set col 9 3 4 1
+set rect 10 3 12 5 2
+set col 13 3 4 1
+set col 15 4 5 3
+set col 16 4 5 1
+set px 8 5 6
+set px 9 5 2
+set px 13 5 2
+set px 14 5 6
+set px 8 6 1
+set row 6 9 14 3
+set col 15 6 9 1
+set row 7 9 14 1
+set row 8 7 8 1
+set row 8 9 10 2
+set px 11 8 1
+set rect 12 8 13 9 2
+set col 14 8 9 3
+set px 16 8 1
+set px 6 9 1
+set row 9 7 9 2
+set px 10 9 1
+set px 11 9 2
+set col 16 9 12 3
+set px 17 9 1
+set col 5 10 12 1
+set row 10 6 7 2
+set px 8 10 1
+set row 10 9 13 3
+set px 14 10 1
+set col 15 10 12 2
+set px 17 10 3
+set px 18 10 1
+set col 6 11 12 3
+set rect 7 11 8 12 2
+set row 11 9 13 1
+set col 14 11 12 2
+set col 17 11 13 1
+set col 18 11 13 3
+set col 19 11 13 1
+set row 12 9 13 2
+set px 6 13 1
+set row 13 7 15 3
+set px 16 13 1
+set row 14 7 15 1
+set px 18 14 1
