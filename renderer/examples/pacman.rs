@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use pixel_editor::renderer::play_animation_terminal;
-use pixel_editor::sprite::{Color, Index, Sprite};
+use canvas::{Color, Index, Sprite};
+use renderer::play_animation_terminal;
 
 const WIDTH: u32 = 33;
 const HEIGHT: u32 = 13;

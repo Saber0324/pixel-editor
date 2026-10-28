@@ -1,4 +1,4 @@
-use crate::sprite::{Color, Index, Sprite, SpriteError};
+use canvas::{Color, Index, Sprite, SpriteError};
 use image::codecs::gif::GifDecoder;
 use image::{AnimationDecoder, RgbaImage};
 use std::collections::HashMap;
@@ -24,7 +24,7 @@ pub enum ImportError {
 
 /// Maps RGBA values to palette indexes, adding colors as they appear.
 #[derive(Default)]
-struct PaletteMap {
+pub struct PaletteMap {
     known: HashMap<[u8; 4], Index>,
 }
 

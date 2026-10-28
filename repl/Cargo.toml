@@ -1,0 +1,10 @@
+[package]
+name = "repl"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+canvas = { version = "0.1.0", path = "../canvas" }
+renderer = { version = "0.1.0", path = "../renderer" }
+rustyline = "19.0.0"
+thiserror = "2.0.21"

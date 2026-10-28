@@ -1,5 +1,5 @@
-use pixel_editor::renderer::render_frame_to_terminal;
-use pixel_editor::sprite::{Color, Index, Sprite};
+use canvas::{Color, Index, Sprite};
+use renderer::render_frame_to_terminal;
 /// # is a pixel, . is empty.
 const HEART: [&str; 8] = [
     ".##...##.",
